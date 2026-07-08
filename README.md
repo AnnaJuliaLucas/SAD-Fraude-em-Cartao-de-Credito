@@ -80,5 +80,5 @@ Com **85 revisões/dia**, a equipe captura **75,9 % das fraudes** com **96,5 % d
 
 ## Autores
 
-- **Anna Julia Lucas** — UFJF / DCC  
-- **João Victor Senra** — UFJF / DCC
+- **Anna Julia Lucas**  
+- **João Victor Senra** 
