@@ -1,0 +1,20 @@
+# Dataset (98 MB — baixe via Kaggle)
+creditcard.csv
+
+# Modelo treinado (binário grande — gerado pelo pipeline.py)
+artefatos/fraud_model.joblib
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.env
+
+# Streamlit
+.streamlit/
+
+# macOS / Windows
+.DS_Store
+Thumbs.db

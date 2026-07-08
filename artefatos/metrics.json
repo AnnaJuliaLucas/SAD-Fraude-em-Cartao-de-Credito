@@ -1,0 +1,49 @@
+{
+  "pergunta_problema": "Como um modelo de classificação pode apoiar a priorização de transações a serem investigadas por uma equipe de auditoria com capacidade limitada?",
+  "definicao_fraude": "Fraude por uso não autorizado de cartão de crédito: transação realizada por um terceiro não autorizado utilizando os dados ou o cartão físico de um cliente legítimo sem o seu conhecimento ou consentimento — em termos diretos, outra pessoa realizou uma compra no cartão do cliente. Distingue-se de fraude de identidade, lavagem de dinheiro ou fraude pelo próprio titular. O portador legítimo não reconhece a transação como sua e a contesta junto à instituição. Os rótulos (Class=1) foram atribuídos retrospectivamente pela equipe de investigação da Worldline, cruzando contestações dos clientes com os registros das operações (setembro/2013, portadores europeus).",
+  "resultados": {
+    "Regressão Logística (baseline)": {
+      "ROC_AUC": 0.9803,
+      "PR_AUC": 0.7761,
+      "Precisao": 0.0269,
+      "Recall": 0.9074,
+      "F1": 0.0523,
+      "confusion_matrix": [
+        [
+          81795,
+          3540
+        ],
+        [
+          10,
+          98
+        ]
+      ]
+    },
+    "Random Forest": {
+      "ROC_AUC": 0.9725,
+      "PR_AUC": 0.815,
+      "Precisao": 0.9875,
+      "Recall": 0.7315,
+      "F1": 0.8404,
+      "confusion_matrix": [
+        [
+          85334,
+          1
+        ],
+        [
+          29,
+          79
+        ]
+      ]
+    }
+  },
+  "modelo_principal": "Random Forest",
+  "dataset": {
+    "total": 284807,
+    "fraudes": 492,
+    "legitimas": 284315,
+    "taxa_fraude_%": 0.1727,
+    "periodo": "setembro/2013 (~2 dias)",
+    "fonte": "Worldline x MLG-ULB — kaggle.com/datasets/mlg-ulb/creditcardfraud"
+  }
+}
