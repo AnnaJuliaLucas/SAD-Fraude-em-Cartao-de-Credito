@@ -20,11 +20,29 @@ Sistema de apoio à decisão baseado em classificação supervisionada para prio
 
 ---
 
+## Dashboard Interativo (Streamlit)
+
+O projeto inclui um dashboard interativo com três abas:
+
+- **📋 Visão Geral** — Definição de fraude, métricas dos modelos, curva PR
+- **🔍 Fila de Auditoria** — Transações priorizadas por score de suspeita
+- **📊 Análise de Capacidade** — Simulação *what-if* de cenários operacionais
+
+### Executar localmente
+
+```bash
+streamlit run app.py
+```
+
+---
+
 ## Como Executar
 
 **1. Clone o repositório e instale as dependências**
 ```bash
-pip install pandas numpy scikit-learn matplotlib seaborn streamlit joblib
+git clone https://github.com/AnnaJuliaLucas/SAD-Fraude-em-Cartao-de-Credito.git
+cd SAD-Fraude-em-Cartao-de-Credito
+pip install -r requirements.txt
 ```
 
 **2. Baixe o dataset** e coloque o arquivo `creditcard.csv` na raiz do projeto
@@ -49,12 +67,16 @@ streamlit run app.py
 ## Estrutura do Projeto
 
 ```
-├── pipeline.py          # EDA, pré-processamento, modelagem e avaliação
 ├── app.py               # Dashboard Streamlit (análise de capacidade interativa)
+├── pipeline.py          # EDA, pré-processamento, modelagem e avaliação
+├── requirements.txt     # Dependências Python
+├── .streamlit/
+│   └── config.toml      # Tema visual do dashboard
 ├── artefatos/
-│   ├── fraud_model.joblib     # Modelo treinado (Random Forest + scaler)
+│   ├── fraud_model.joblib     # Modelo treinado (gerado pelo pipeline)
 │   ├── metrics.json           # Métricas dos modelos
-│   └── scenario_capacity.csv  # Tabela de cenários de capacidade
+│   ├── scenario_capacity.csv  # Tabela de cenários de capacidade
+│   └── test_scored.csv        # Dados de teste pré-pontuados (gerado pelo pipeline)
 └── figures/
     ├── eda_distribuicao_classes.png
     ├── eda_padrao_temporal.png

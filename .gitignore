@@ -12,8 +12,8 @@ __pycache__/
 venv/
 .env
 
-# Streamlit
-.streamlit/
+# PDFs gerados
+Explicacao_Completa_Trabalho.pdf
 
 # macOS / Windows
 .DS_Store

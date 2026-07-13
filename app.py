@@ -4,16 +4,21 @@ Dashboard: Priorização de Auditoria de Fraude em Cartão de Crédito
 
 Execute: streamlit run app.py
 (certifique-se de rodar pipeline.py antes para gerar os artefatos)
+
+Modos de operação:
+  • COMPLETO — creditcard.csv + fraud_model.joblib presentes
+                (gerados pelo pipeline.py localmente)
+  • CLOUD   — apenas artefatos leves (metrics.json,
+                scenario_capacity.csv, test_scored.csv, figures/)
+                Funciona no Streamlit Cloud sem o dataset de 150 MB.
 """
 
 import os
 import json
-import joblib
 import numpy as np
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
-from sklearn.metrics import precision_recall_curve, average_precision_score
 
 # ── Configuração da página ────────────────────────────────────────
 st.set_page_config(
@@ -25,29 +30,63 @@ st.set_page_config(
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 NAVY, TEAL, MUTED = "#1C2B4B", "#00A896", "#6B7A8D"
 
-# ── Carregamento ──────────────────────────────────────────────────
-@st.cache_resource
-def carregar():
-    bundle = joblib.load(os.path.join(BASE_DIR, "artefatos", "fraud_model.joblib"))
-    df = pd.read_csv(os.path.join(BASE_DIR, "creditcard.csv"))
-    df["Hour"] = (df["Time"] // 3600) % 24
-    df = df.sort_values("Time").reset_index(drop=True)
-    split_idx = int(len(df) * 0.70)
-    test_df = df.iloc[split_idx:].copy()
-    features = bundle["features"]
-    scaler = bundle["scaler"]
-    X_test = test_df[features].copy()
-    X_test[["Amount", "Hour"]] = scaler.transform(X_test[["Amount", "Hour"]])
-    test_df["score"] = bundle["model"].predict_proba(X_test)[:, 1]
-    with open(os.path.join(BASE_DIR, "artefatos", "metrics.json"), encoding="utf-8") as f:
-        metrics = json.load(f)
-    scenario_df = pd.read_csv(os.path.join(BASE_DIR, "artefatos", "scenario_capacity.csv"))
-    n_days = bundle["n_days_test"]
-    return test_df, metrics, scenario_df, n_days, bundle["model_name"]
 
-test_df, metrics, scenario_df, n_days, model_name = carregar()
-total_frauds = int(test_df["Class"].sum())
-ranked = test_df.sort_values("score", ascending=False).reset_index(drop=True)
+# ── Carregamento ──────────────────────────────────────────────────
+@st.cache_data
+def carregar():
+    """Carrega artefatos disponíveis. Funciona com ou sem o dataset original."""
+    arts_dir = os.path.join(BASE_DIR, "artefatos")
+
+    # Métricas (sempre disponível)
+    with open(os.path.join(arts_dir, "metrics.json"), encoding="utf-8") as f:
+        metrics = json.load(f)
+
+    # Cenários de capacidade (sempre disponível)
+    scenario_df = pd.read_csv(os.path.join(arts_dir, "scenario_capacity.csv"))
+
+    # Tentativa 1: dados pré-pontuados (gerados pelo pipeline atualizado)
+    scored_path = os.path.join(arts_dir, "test_scored.csv")
+    full_csv    = os.path.join(BASE_DIR, "creditcard.csv")
+    model_path  = os.path.join(arts_dir, "fraud_model.joblib")
+
+    ranked = None
+    n_days = 1
+    model_name = metrics.get("modelo_principal", "Random Forest")
+
+    if os.path.exists(scored_path):
+        # Modo cloud / pré-computado
+        ranked = pd.read_csv(scored_path)
+        # Estimar n_days a partir do Time
+        if "Time" in ranked.columns and len(ranked) > 1:
+            n_days = max(1, round(
+                (ranked["Time"].max() - ranked["Time"].min()) / 86400
+            ))
+
+    elif os.path.exists(full_csv) and os.path.exists(model_path):
+        # Modo completo (local com dataset + modelo)
+        import joblib
+        bundle = joblib.load(model_path)
+        df = pd.read_csv(full_csv)
+        df["Hour"] = (df["Time"] // 3600) % 24
+        df = df.sort_values("Time").reset_index(drop=True)
+        split_idx = int(len(df) * 0.70)
+        test_df = df.iloc[split_idx:].copy()
+        features = bundle["features"]
+        scaler = bundle["scaler"]
+        X_test = test_df[features].copy()
+        X_test[["Amount", "Hour"]] = scaler.transform(X_test[["Amount", "Hour"]])
+        test_df["score"] = bundle["model"].predict_proba(X_test)[:, 1]
+        ranked = (test_df[["Time", "Amount", "Hour", "score", "Class"]]
+                  .sort_values("score", ascending=False)
+                  .reset_index(drop=True))
+        n_days = bundle.get("n_days_test", 1)
+        model_name = bundle.get("model_name", model_name)
+
+    total_frauds = int(ranked["Class"].sum()) if ranked is not None else 0
+    return ranked, metrics, scenario_df, n_days, model_name, total_frauds
+
+
+ranked, metrics, scenario_df, n_days, model_name, total_frauds = carregar()
 
 # ── Cabeçalho ─────────────────────────────────────────────────────
 st.markdown(
@@ -158,49 +197,61 @@ with tab2:
         "a equipe trabalha de cima para baixo até esgotar sua capacidade diária."
     )
 
-    col_ctrl, col_info = st.columns([1, 2], gap="large")
+    if ranked is not None and len(ranked) > 0:
+        col_ctrl, col_info = st.columns([1, 2], gap="large")
 
-    with col_ctrl:
-        cap = st.slider("Capacidade da equipe (casos/dia)", 5, 300, 80, step=5)
-        threshold = st.slider("Limiar de alerta (probabilidade mínima)", 0.0, 1.0, 0.5, step=0.05)
+        with col_ctrl:
+            cap = st.slider("Capacidade da equipe (casos/dia)", 5, 300, 80, step=5)
+            threshold = st.slider("Limiar de alerta (probabilidade mínima)",
+                                  0.0, 1.0, 0.5, step=0.05)
 
-    K = cap * n_days
-    top_k = ranked.iloc[:K]
-    caught = int(top_k["Class"].sum())
-    recall_k = caught / total_frauds if total_frauds else 0
-    prec_k = caught / K if K else 0
+        K = cap * n_days
+        top_k = ranked.iloc[:K]
+        caught = int(top_k["Class"].sum())
+        recall_k = caught / total_frauds if total_frauds else 0
+        prec_k = caught / K if K else 0
 
-    with col_info:
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Casos revisados", f"{K:,}")
-        m2.metric("Fraudes capturadas", f"{caught} / {total_frauds}")
-        m3.metric("Cobertura (Recall)", f"{recall_k*100:.1f} %")
-        m4.metric("Precisão dos alertas", f"{prec_k*100:.1f} %")
+        with col_info:
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Casos revisados", f"{K:,}")
+            m2.metric("Fraudes capturadas", f"{caught} / {total_frauds}")
+            m3.metric("Cobertura (Recall)", f"{recall_k*100:.1f} %")
+            m4.metric("Precisão dos alertas", f"{prec_k*100:.1f} %")
 
-    st.divider()
-    st.markdown(f"**Top {min(50, K)} casos da fila de auditoria** "
-                f"(score ≥ {threshold:.2f} exibidos)")
-    exibir = top_k[top_k["score"] >= threshold].head(50).copy()
-    exibir = exibir[["Time", "Amount", "Hour", "score", "Class"]].rename(columns={
-        "score": "prob_fraude",
-        "Class": "fraude_real (ground-truth)",
-        "Amount": "valor_transacao_EUR",
-    })
-    exibir["prob_fraude"] = exibir["prob_fraude"].round(4)
-    exibir["valor_transacao_EUR"] = exibir["valor_transacao_EUR"].round(2)
+        st.divider()
+        st.markdown(f"**Top {min(50, K)} casos da fila de auditoria** "
+                    f"(score ≥ {threshold:.2f} exibidos)")
+        exibir = top_k[top_k["score"] >= threshold].head(50).copy()
+        exibir = exibir[["Time", "Amount", "Hour", "score", "Class"]].rename(columns={
+            "score": "prob_fraude",
+            "Class": "fraude_real (ground-truth)",
+            "Amount": "valor_transacao_EUR",
+        })
+        exibir["prob_fraude"] = exibir["prob_fraude"].round(4)
+        exibir["valor_transacao_EUR"] = exibir["valor_transacao_EUR"].round(2)
 
-    st.dataframe(
-        exibir.style.background_gradient(
-            subset=["prob_fraude"], cmap="Greens"
-        ).format({"prob_fraude": "{:.4f}", "valor_transacao_EUR": "€ {:.2f}"}),
-        use_container_width=True,
-        height=420,
-    )
-    st.caption(
-        "fraude_real = 1 → fraude confirmada · 0 → legítima. "
-        "A equipe de auditoria *não* enxerga essa coluna em produção — "
-        "é usada aqui apenas para avaliar o modelo."
-    )
+        st.dataframe(
+            exibir.style.background_gradient(
+                subset=["prob_fraude"], cmap="Greens"
+            ).format({"prob_fraude": "{:.4f}", "valor_transacao_EUR": "€ {:.2f}"}),
+            use_container_width=True,
+            height=420,
+        )
+        st.caption(
+            "fraude_real = 1 → fraude confirmada · 0 → legítima. "
+            "A equipe de auditoria *não* enxerga essa coluna em produção — "
+            "é usada aqui apenas para avaliar o modelo."
+        )
+    else:
+        st.warning(
+            "⚠️ **Dados de transações não disponíveis.**\n\n"
+            "Para visualizar a fila de auditoria com transações individuais, "
+            "execute `python pipeline.py` localmente com o dataset "
+            "`creditcard.csv` (disponível no Kaggle). O pipeline gerará o "
+            "arquivo `artefatos/test_scored.csv` necessário.\n\n"
+            "As abas **Visão Geral** e **Análise de Capacidade** "
+            "funcionam normalmente com os artefatos do repositório."
+        )
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -211,9 +262,12 @@ with tab3:
     st.markdown(
         "Dado que a equipe tem capacidade limitada, o gráfico mostra "
         "**quantas fraudes são capturadas** e **qual a precisão dos alertas** "
-        "para cada nível de capacidade diária. "
-        "A linha vertical indica a capacidade selecionada na Aba 2."
+        "para cada nível de capacidade diária."
     )
+
+    # Slider de capacidade (independente da Aba 2)
+    cap_tab3 = st.slider("Capacidade da equipe (casos/dia)",
+                         5, 200, 85, step=5, key="cap_tab3")
 
     fig, ax1 = plt.subplots(figsize=(9, 5))
     ax2 = ax1.twinx()
@@ -226,12 +280,12 @@ with tab3:
              color=NAVY, linewidth=2.0, linestyle="--",
              label="Precisão — alertas corretos (%)")
 
-    ax1.axvline(cap, color="orange", linestyle=":", linewidth=2, alpha=0.8,
-                label=f"Capacidade atual ({cap}/dia)")
+    ax1.axvline(cap_tab3, color="orange", linestyle=":", linewidth=2, alpha=0.8,
+                label=f"Capacidade atual ({cap_tab3}/dia)")
 
-    row_cur = scenario_df[scenario_df["capacidade_por_dia"] == cap]
+    row_cur = scenario_df[scenario_df["capacidade_por_dia"] == cap_tab3]
     if not row_cur.empty:
-        ax1.scatter([cap], [row_cur.iloc[0]["recall_%"]],
+        ax1.scatter([cap_tab3], [row_cur.iloc[0]["recall_%"]],
                     color="orange", zorder=5, s=80)
 
     ax1.set_xlabel("Casos revisados por dia")
@@ -250,6 +304,15 @@ with tab3:
     fig.tight_layout()
     st.pyplot(fig)
     plt.close(fig)
+
+    # Métricas do cenário selecionado
+    if not row_cur.empty:
+        r = row_cur.iloc[0]
+        st.markdown(
+            f"**Com {int(r['capacidade_por_dia'])} revisões/dia:** "
+            f"a equipe captura **{r['recall_%']:.1f}%** das fraudes "
+            f"com **{r['precisao_%']:.1f}%** de precisão nos alertas."
+        )
 
     st.divider()
     st.subheader("Tabela de Cenários")

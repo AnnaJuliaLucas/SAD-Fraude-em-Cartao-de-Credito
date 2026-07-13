@@ -510,6 +510,13 @@ with open(os.path.join(ARTS, "metrics.json"), "w", encoding="utf-8") as f:
 # Tabela de cenários
 scenario_df.to_csv(os.path.join(ARTS, "scenario_capacity.csv"), index=False)
 
+# Dados pré-pontuados do teste (para o dashboard funcionar sem o CSV
+# original e sem o modelo treinado — essencial para Streamlit Cloud)
+scored_export = test_df[["Time", "Amount", "Hour", "score", "Class"]].copy()
+scored_export = scored_export.sort_values("score", ascending=False).reset_index(drop=True)
+scored_export.to_csv(os.path.join(ARTS, "test_scored.csv"), index=False)
+print(f"  test_scored.csv: {len(scored_export):,} transações pré-pontuadas")
+
 print(f"  Artefatos salvos em: {ARTS}")
 print(f"  Figuras salvas em:   {FIGS}")
 print("\n  Figuras geradas:")
@@ -519,3 +526,4 @@ for fname in sorted(os.listdir(FIGS)):
 print("\n" + "=" * 60)
 print("Pipeline concluído com sucesso.")
 print("=" * 60)
+
